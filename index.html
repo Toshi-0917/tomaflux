@@ -263,7 +263,6 @@
             </div>
             <div class="toolbar" role="group" aria-label="表示設定">
                 <button id="themeBtn" class="ghost" title="テーマ切替 (T)">ライト/ダーク</button>
-                <button id="notifyBtn" class="ghost" title="通知を許可">通知許可</button>
             </div>
         </header>
 
@@ -278,8 +277,6 @@
                 <div class="phase" id="phaseLabel">作業</div>
                 <div class="stats">
                     <span id="cycleStat">0/4</span>
-                    <span>・</span>
-                    <span id="goalStat">目標 8</span>
                 </div>
                 <div class="controls" role="group" aria-label="操作">
                     <button id="startPauseBtn" class="btn" title="開始 / 一時停止 (Space)">開始</button>
@@ -305,25 +302,22 @@
                     <input id="longMin" type="number" min="1" max="120" value="15" />
                 </div>
                 <div class="row">
-                    <label for="interval">長休憩間隔 (回) <span class="hint">0で無効</span></label>
+                    <label for="interval">長休憩間隔 (回)</label>
                     <input id="interval" type="number" min="0" max="10" value="4" />
+                </div>
+                <div style="margin: -4px 0 8px 0; color: var(--muted); font-size: 13px;">
+                    0で無効
                 </div>
                 <div class="row">
                     <label for="cycles">サイクル回数</label>
-                    <select id="cycles">
-                        <option value="4" selected>4</option>
-                        <option value="6">6</option>
-                        <option value="8">8</option>
-                        <option value="inf">∞（無制限）</option>
-                    </select>
+                    <input id="cycles" type="number" min="0" max="999" value="4" />
                 </div>
-                <div class="row">
-                    <label for="goal">デイリー目標</label>
-                    <input id="goal" type="number" min="1" max="999" value="8" />
+                <div style="margin: -4px 0 8px 0; color: var(--muted); font-size: 13px;">
+                    0で無制限
                 </div>
                 <div class="row">
                     <label>自動遷移</label>
-                    <label class="switch"><input id="autoToggle" type="checkbox" /><span class="slider" aria-hidden="true"></span></label>
+                    <label class="switch"><input id="autoToggle" type="checkbox" checked /><span class="slider" aria-hidden="true"></span></label>
                 </div>
                 <div class="divider"></div>
                 <div class="row">
@@ -333,6 +327,10 @@
                 <div class="row">
                     <label>ミュート</label>
                     <label class="switch"><input id="muteToggle" type="checkbox" /><span class="slider" aria-hidden="true"></span></label>
+                </div>
+                <div class="row">
+                    <label>通知</label>
+                    <label class="switch"><input id="notifyToggle" type="checkbox" /><span class="slider" aria-hidden="true"></span></label>
                 </div>
                 <div class="row">
                     <label>バイブ (対応端末)</label>
@@ -371,8 +369,7 @@
                 if (p.has("long")) longMin.value = getNum("long", +longMin.value);
                 if (p.has("interval")) interval.value = Math.max(0, Math.min(10, parseInt(p.get("interval"), 10) || +interval.value));
                 if (p.has("cycles"))
-                    cycles.value =
-                        p.get("cycles") === "∞" || p.get("cycles") === "inf" ? "inf" : parseInt(p.get("cycles"), 10) || cycles.value;
+                    cycles.value = parseInt(p.get("cycles"), 10) || cycles.value;
                 if (p.has("auto")) autoToggle.checked = p.get("auto") === "1" || p.get("auto") === "true";
             }
 
@@ -382,24 +379,22 @@
             const timeEl = document.getElementById("time");
             const phaseLabel = document.getElementById("phaseLabel");
             const cycleStat = document.getElementById("cycleStat");
-            const goalStat = document.getElementById("goalStat");
             const live = document.getElementById("live");
 
             const startPauseBtn = document.getElementById("startPauseBtn");
             const skipBtn = document.getElementById("skipBtn");
             const resetBtn = document.getElementById("resetBtn");
             const themeBtn = document.getElementById("themeBtn");
-            const notifyBtn = document.getElementById("notifyBtn");
 
             const workMin = document.getElementById("workMin");
             const shortMin = document.getElementById("shortMin");
             const longMin = document.getElementById("longMin");
             const interval = document.getElementById("interval");
             const cycles = document.getElementById("cycles");
-            const goal = document.getElementById("goal");
             const autoToggle = document.getElementById("autoToggle");
             const volume = document.getElementById("volume");
             const muteToggle = document.getElementById("muteToggle");
+            const notifyToggle = document.getElementById("notifyToggle");
             const vibeToggle = document.getElementById("vibeToggle");
 
             // ====== Web Worker (計時) ======
@@ -458,15 +453,38 @@
             });
 
             // ====== 通知 ======
-            function requestNotify() {
-                if (!("Notification" in window)) return alert("このブラウザは通知に対応していません");
-                Notification.requestPermission().then((p) => {
-                    if (p === "granted") announce("デスクトップ通知を有効にしました");
-                    else announce("通知は許可されていません");
-                });
+            function requestNotifyPermission() {
+                if (!("Notification" in window)) {
+                    alert("このブラウザは通知に対応していません");
+                    notifyToggle.checked = false;
+                    return;
+                }
+                if (Notification.permission === "denied") {
+                    alert("通知が拒否されています。ブラウザ設定で許可してください");
+                    notifyToggle.checked = false;
+                    return;
+                }
+                if (Notification.permission === "granted") {
+                    return Promise.resolve("granted");
+                }
+                return Notification.requestPermission();
             }
+
+            notifyToggle.addEventListener("change", async () => {
+                if (notifyToggle.checked) {
+                    const result = await requestNotifyPermission();
+                    if (result !== "granted") {
+                        notifyToggle.checked = false;
+                    } else {
+                        store.set({ notifyEnabled: true });
+                    }
+                } else {
+                    store.set({ notifyEnabled: false });
+                }
+            });
+
             function notify(title, body) {
-                if ("Notification" in window && Notification.permission === "granted") {
+                if ("Notification" in window && Notification.permission === "granted" && notifyToggle.checked) {
                     new Notification(title, { body, tag: "tomaflux" });
                 }
             }
@@ -498,8 +516,9 @@
                 if (s.short) shortMin.value = s.short;
                 if (s.long) longMin.value = s.long;
                 if (s.interval != null) interval.value = s.interval;
-                if (s.cyclesTarget != null) cycles.value = s.cyclesTarget === "inf" ? "inf" : String(s.cyclesTarget);
-                if (s.goal) goal.value = s.goal;
+                if (s.cyclesTarget != null) {
+                    cycles.value = s.cyclesTarget === Infinity ? "0" : String(s.cyclesTarget);
+                }
                 if (s.auto != null) autoToggle.checked = !!s.auto;
                 if (s.volume != null) {
                     volume.value = s.volume;
@@ -507,6 +526,7 @@
                 }
                 if (s.muted != null) muteToggle.checked = !!s.muted;
                 if (s.vibe != null) vibeToggle.checked = !!s.vibe;
+                if (s.notifyEnabled != null) notifyToggle.checked = !!s.notifyEnabled;
 
                 applyQueryParams();
                 applySettings();
@@ -517,7 +537,9 @@
 
             // ====== 設定反映 ======
             function getCyclesTarget() {
-                return cycles.value === "inf" ? Infinity : Math.max(1, Math.min(999, parseInt(cycles.value, 10) || 4));
+                const val = parseInt(cycles.value, 10);
+                if (isNaN(val)) return 4;
+                return val === 0 ? Infinity : Math.max(1, Math.min(999, val));
             }
 
             function applySettings() {
@@ -531,8 +553,7 @@
                     short: +shortMin.value,
                     long: +longMin.value,
                     interval: +interval.value,
-                    cyclesTarget: cycles.value === "inf" ? "inf" : +cycles.value,
-                    goal: +goal.value,
+                    cyclesTarget: +cycles.value,
                     auto: state.auto,
                     volume: masterGain.gain.value,
                     muted: !!muteToggle.checked,
@@ -580,7 +601,6 @@
             function updateStats() {
                 const target = state.cyclesTarget === Infinity ? "∞" : state.cyclesTarget;
                 cycleStat.textContent = `${state.cyclesDone}/${target}`;
-                goalStat.textContent = `目標 ${Math.max(1, parseInt(goal.value, 10) || 8)}`;
             }
 
             function announce(msg) {
@@ -704,9 +724,8 @@
                 d.dataset.theme = d.dataset.theme === "dark" ? "light" : "dark";
                 store.set({ theme: d.dataset.theme });
             });
-            notifyBtn.addEventListener("click", requestNotify);
 
-            [workMin, shortMin, longMin, interval, cycles, goal, autoToggle].forEach((el) => {
+            [workMin, shortMin, longMin, interval, cycles, autoToggle].forEach((el) => {
                 el.addEventListener("change", () => {
                     applySettings();
                     updateUI();
