@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Tomaflux – ポモドーロタイマー</title>
+        <meta
+            name="description"
+            content="作業・休憩時間とサイクル回数を自由に設定できる軽量ポモドーロタイマー。Web通知・音・バイブ対応。"
+        />
+        <style>
+            :root {
+                --bg: #ffffff;
+                --fg: #111827;
+                --muted: #6b7280;
+                --accent-work: #d9463e; /* 赤系(作業) */
+                --accent-short: #22a06b; /* 緑系(短休憩) */
+                --accent-long: #0ea5e9; /* 青系(長休憩) */
+                --card: #f3f4f6;
+                --btn: #111827;
+                --btn-fg: #ffffff;
+                --danger: #b91c1c;
+                --ok: #15803d;
+                --border: #e5e7eb;
+                --focus: #6366f1;
+            }
+            [data-theme="dark"] {
+                --bg: #0b0f18;
+                --fg: #e5e7eb;
+                --muted: #9ca3af;
+                --card: #111827;
+                --btn: #e5e7eb;
+                --btn-fg: #0b0f18;
+                --border: #1f2937;
+                --accent-work: #f87171;
+                --accent-short: #34d399;
+                --accent-long: #60a5fa;
+                --focus: #8b5cf6;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                margin: 0;
+                background: var(--bg);
+                color: var(--fg);
+                font: 16px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji",
+                    "Segoe UI Emoji";
+            }
+            header,
+            footer {
+                max-width: 960px;
+                margin: 0 auto;
+                padding: 16px 20px;
+            }
+            main {
+                max-width: 960px;
+                margin: 0 auto;
+                padding: 12px 20px;
+            }
+            header {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                justify-content: space-between;
+            }
+            .logo {
+                font-weight: 800;
+                letter-spacing: 0.2px;
+            }
+            .chip {
+                padding: 4px 10px;
+                border: 1px solid var(--border);
+                border-radius: 999px;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .toolbar {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            button,
+            .btn {
+                cursor: pointer;
+                border: none;
+                background: var(--btn);
+                color: var(--btn-fg);
+                padding: 10px 14px;
+                border-radius: 12px;
+                font-weight: 600;
+            }
+            button.ghost {
+                background: transparent;
+                color: var(--fg);
+                border: 1px solid var(--border);
+            }
+            button:focus-visible,
+            .switch input:focus-visible + .slider {
+                outline: 3px solid var(--focus);
+                outline-offset: 2px;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr 360px;
+                gap: 16px;
+            }
+            @media (max-width: 880px) {
+                .grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            .card {
+                background: var(--card);
+                border: 1px solid var(--border);
+                border-radius: 16px;
+                padding: 16px;
+            }
+            .timer {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 12px;
+                padding: 24px;
+            }
+            .phase {
+                font-weight: 700;
+                letter-spacing: 0.4px;
+            }
+            .display {
+                position: relative;
+                width: min(82vw, 520px);
+                aspect-ratio: 1;
+                border-radius: 999px;
+                display: grid;
+                place-items: center;
+            }
+            .time {
+                font-variant-numeric: tabular-nums;
+                font-size: clamp(42px, 9vw, 88px);
+                font-weight: 800;
+            }
+            .progress {
+                position: absolute;
+                inset: 0;
+                border-radius: 999px;
+                background: conic-gradient(var(--accent-work) 0deg, var(--accent-work) 0deg, #0000 0deg);
+                mask: radial-gradient(circle at 50% 50%, #0000 64%, #000 65%);
+            }
+            .display.short .progress {
+                background: conic-gradient(var(--accent-short) 0deg, var(--accent-short) 0deg, #0000 0deg);
+            }
+            .display.long .progress {
+                background: conic-gradient(var(--accent-long) 0deg, var(--accent-long) 0deg, #0000 0deg);
+            }
+
+            .stats {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                justify-content: center;
+                color: var(--muted);
+            }
+
+            .controls {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .controls button {
+                min-width: 112px;
+            }
+
+            .settings .row {
+                display: grid;
+                grid-template-columns: 160px 1fr;
+                gap: 12px;
+                align-items: center;
+                margin: 8px 0;
+            }
+            .settings input[type="number"] {
+                width: 100%;
+                padding: 10px;
+                border-radius: 10px;
+                border: 1px solid var(--border);
+                background: transparent;
+                color: var(--fg);
+            }
+            .settings input[type="checkbox"] {
+                transform: scale(1.1);
+            }
+            .hint {
+                color: var(--muted);
+                font-size: 13px;
+            }
+            .divider {
+                height: 1px;
+                background: var(--border);
+                margin: 16px 0;
+            }
+
+            .switch {
+                position: relative;
+                display: inline-block;
+                width: 48px;
+                height: 28px;
+            }
+            .switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+            .slider {
+                position: absolute;
+                cursor: pointer;
+                inset: 0;
+                background: #c7cad1;
+                border-radius: 999px;
+                transition: 0.2s;
+            }
+            .slider:before {
+                content: "";
+                position: absolute;
+                height: 22px;
+                width: 22px;
+                left: 3px;
+                top: 3px;
+                background: white;
+                border-radius: 50%;
+                transition: 0.2s;
+            }
+            .switch input:checked + .slider {
+                background: #60a5fa;
+            }
+            .switch input:checked + .slider:before {
+                transform: translateX(20px);
+            }
+
+            .sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div style="display: flex; align-items: center; gap: 10px">
+                <span class="logo">Tomaflux</span>
+                <span class="chip">MIT</span>
+            </div>
+            <div class="toolbar" role="group" aria-label="表示設定">
+                <button id="themeBtn" class="ghost" title="テーマ切替 (T)">ライト/ダーク</button>
+                <button id="notifyBtn" class="ghost" title="通知を許可">通知許可</button>
+            </div>
+        </header>
+
+        <main class="grid">
+            <!-- 左：タイマー本体 -->
+            <section class="card timer" aria-labelledby="timerHeading">
+                <h1 id="timerHeading" class="sr-only">ポモドーロタイマー</h1>
+                <div id="display" class="display" aria-live="polite" aria-atomic="true">
+                    <div id="progress" class="progress"></div>
+                    <div class="time" id="time">25:00</div>
+                </div>
+                <div class="phase" id="phaseLabel">作業</div>
+                <div class="stats">
+                    <span id="cycleStat">0/4</span>
+                    <span>・</span>
+                    <span id="goalStat">目標 8</span>
+                </div>
+                <div class="controls" role="group" aria-label="操作">
+                    <button id="startPauseBtn" class="btn" title="開始 / 一時停止 (Space)">開始</button>
+                    <button id="skipBtn" class="ghost" title="次フェーズへ (N)">スキップ</button>
+                    <button id="resetBtn" class="ghost" title="リセット (R)">リセット</button>
+                </div>
+                <div id="live" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+            </section>
+
+            <!-- 右：設定 -->
+            <aside class="card settings" aria-labelledby="settingsHeading">
+                <h2 id="settingsHeading">設定</h2>
+                <div class="row">
+                    <label for="workMin">作業 (分)</label>
+                    <input id="workMin" type="number" min="1" max="120" value="25" />
+                </div>
+                <div class="row">
+                    <label for="shortMin">短休憩 (分)</label>
+                    <input id="shortMin" type="number" min="1" max="120" value="5" />
+                </div>
+                <div class="row">
+                    <label for="longMin">長休憩 (分)</label>
+                    <input id="longMin" type="number" min="1" max="120" value="15" />
+                </div>
+                <div class="row">
+                    <label for="interval">長休憩間隔 (回) <span class="hint">0で無効</span></label>
+                    <input id="interval" type="number" min="0" max="10" value="4" />
+                </div>
+                <div class="row">
+                    <label for="cycles">サイクル回数</label>
+                    <select id="cycles">
+                        <option value="4" selected>4</option>
+                        <option value="6">6</option>
+                        <option value="8">8</option>
+                        <option value="inf">∞（無制限）</option>
+                    </select>
+                </div>
+                <div class="row">
+                    <label for="goal">デイリー目標</label>
+                    <input id="goal" type="number" min="1" max="999" value="8" />
+                </div>
+                <div class="row">
+                    <label>自動遷移</label>
+                    <label class="switch"><input id="autoToggle" type="checkbox" /><span class="slider" aria-hidden="true"></span></label>
+                </div>
+                <div class="divider"></div>
+                <div class="row">
+                    <label for="volume">音量</label>
+                    <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6" />
+                </div>
+                <div class="row">
+                    <label>ミュート</label>
+                    <label class="switch"><input id="muteToggle" type="checkbox" /><span class="slider" aria-hidden="true"></span></label>
+                </div>
+                <div class="row">
+                    <label>バイブ (対応端末)</label>
+                    <label class="switch"><input id="vibeToggle" type="checkbox" /><span class="slider" aria-hidden="true"></span></label>
+                </div>
+                <p class="hint">ショートカット: Space=開始/停止, N=スキップ, R=リセット, T=テーマ切替</p>
+            </aside>
+        </main>
+
+        <footer>
+            <small style="color: var(--muted)">© 2025 Tomaflux • 効果音: WebAudio生成 • ライセンス: MIT</small>
+        </footer>
+
+        <script>
+            // ====== 永続化ユーティリティ ======
+            const store = {
+                get() {
+                    try {
+                        return JSON.parse(localStorage.getItem("tomaflux") || "{}");
+                    } catch {
+                        return {};
+                    }
+                },
+                set(patch) {
+                    const next = { ...store.get(), ...patch };
+                    localStorage.setItem("tomaflux", JSON.stringify(next));
+                },
+            };
+
+            // ====== URL パラメータ適用 ======
+            function applyQueryParams() {
+                const p = new URLSearchParams(location.search);
+                const getNum = (k, d) => (p.has(k) ? Math.max(1, Math.min(120, parseInt(p.get(k), 10) || d)) : d);
+                if (p.has("work")) workMin.value = getNum("work", +workMin.value);
+                if (p.has("short")) shortMin.value = getNum("short", +shortMin.value);
+                if (p.has("long")) longMin.value = getNum("long", +longMin.value);
+                if (p.has("interval")) interval.value = Math.max(0, Math.min(10, parseInt(p.get("interval"), 10) || +interval.value));
+                if (p.has("cycles"))
+                    cycles.value =
+                        p.get("cycles") === "∞" || p.get("cycles") === "inf" ? "inf" : parseInt(p.get("cycles"), 10) || cycles.value;
+                if (p.has("auto")) autoToggle.checked = p.get("auto") === "1" || p.get("auto") === "true";
+            }
+
+            // ====== DOM 参照 ======
+            const display = document.getElementById("display");
+            const progressEl = document.getElementById("progress");
+            const timeEl = document.getElementById("time");
+            const phaseLabel = document.getElementById("phaseLabel");
+            const cycleStat = document.getElementById("cycleStat");
+            const goalStat = document.getElementById("goalStat");
+            const live = document.getElementById("live");
+
+            const startPauseBtn = document.getElementById("startPauseBtn");
+            const skipBtn = document.getElementById("skipBtn");
+            const resetBtn = document.getElementById("resetBtn");
+            const themeBtn = document.getElementById("themeBtn");
+            const notifyBtn = document.getElementById("notifyBtn");
+
+            const workMin = document.getElementById("workMin");
+            const shortMin = document.getElementById("shortMin");
+            const longMin = document.getElementById("longMin");
+            const interval = document.getElementById("interval");
+            const cycles = document.getElementById("cycles");
+            const goal = document.getElementById("goal");
+            const autoToggle = document.getElementById("autoToggle");
+            const volume = document.getElementById("volume");
+            const muteToggle = document.getElementById("muteToggle");
+            const vibeToggle = document.getElementById("vibeToggle");
+
+            // ====== Web Worker (計時) ======
+            const workerBlob = new Blob(
+                [
+                    `
+              let timer = null;
+              self.onmessage = (e)=>{
+                const { type, intervalMs } = e.data || {};
+                if(type==='start'){
+                  clearInterval(timer);
+                  const step = Math.max(50, intervalMs || 250);
+                  timer = setInterval(()=>postMessage({t:Date.now()}), step);
+                } else if(type==='stop'){
+                  clearInterval(timer); timer=null;
+                }
+              };
+            `,
+                ],
+                { type: "application/javascript" }
+            );
+            const worker = new Worker(URL.createObjectURL(workerBlob));
+
+            // ====== 音 (WebAudio) ======
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioCtx();
+            let masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.6;
+            masterGain.connect(audioCtx.destination);
+
+            function beep(pattern = "done") {
+                if (muteToggle.checked) return;
+                const now = audioCtx.currentTime;
+                const seq = pattern === "phase" ? [440, 0, 660] : [523.25, 659.25, 783.99];
+                seq.forEach((freq, i) => {
+                    if (freq === 0) return; // 休符
+                    const o = audioCtx.createOscillator();
+                    const g = audioCtx.createGain();
+                    o.type = "sine";
+                    o.frequency.value = freq;
+                    o.connect(g);
+                    g.connect(masterGain);
+                    const t = now + i * 0.12;
+                    const dur = 0.1;
+                    g.gain.setValueAtTime(0, t);
+                    g.gain.linearRampToValueAtTime(0.8, t + 0.01);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                    o.start(t);
+                    o.stop(t + dur + 0.02);
+                });
+            }
+
+            volume.addEventListener("input", () => {
+                masterGain.gain.value = parseFloat(volume.value || "0.6");
+                store.set({ volume: masterGain.gain.value });
+            });
+
+            // ====== 通知 ======
+            function requestNotify() {
+                if (!("Notification" in window)) return alert("このブラウザは通知に対応していません");
+                Notification.requestPermission().then((p) => {
+                    if (p === "granted") announce("デスクトップ通知を有効にしました");
+                    else announce("通知は許可されていません");
+                });
+            }
+            function notify(title, body) {
+                if ("Notification" in window && Notification.permission === "granted") {
+                    new Notification(title, { body, tag: "tomaflux" });
+                }
+            }
+
+            // ====== バイブ ======
+            function vibrate() {
+                if (vibeToggle.checked && navigator.vibrate) navigator.vibrate([80, 40, 80]);
+            }
+
+            // ====== ステート ======
+            const PHASES = { work: "作業", short: "短休憩", long: "長休憩" };
+            let state = {
+                phase: "work",
+                running: false,
+                startAt: 0,
+                endAt: 0,
+                totalMs: 25 * 60 * 1000,
+                cyclesDone: 0,
+                cyclesTarget: 4,
+                interval: 4,
+                auto: false,
+            };
+
+            // ====== 初期化（保存復元 & URL反映） ======
+            (function init() {
+                const s = store.get();
+                if (s.theme) document.documentElement.dataset.theme = s.theme;
+                if (s.work) workMin.value = s.work;
+                if (s.short) shortMin.value = s.short;
+                if (s.long) longMin.value = s.long;
+                if (s.interval != null) interval.value = s.interval;
+                if (s.cyclesTarget != null) cycles.value = s.cyclesTarget === "inf" ? "inf" : String(s.cyclesTarget);
+                if (s.goal) goal.value = s.goal;
+                if (s.auto != null) autoToggle.checked = !!s.auto;
+                if (s.volume != null) {
+                    volume.value = s.volume;
+                    masterGain.gain.value = s.volume;
+                }
+                if (s.muted != null) muteToggle.checked = !!s.muted;
+                if (s.vibe != null) vibeToggle.checked = !!s.vibe;
+
+                applyQueryParams();
+                applySettings();
+                updateUI();
+                updateStats();
+                document.title = `Tomaflux`;
+            })();
+
+            // ====== 設定反映 ======
+            function getCyclesTarget() {
+                return cycles.value === "inf" ? Infinity : Math.max(1, Math.min(999, parseInt(cycles.value, 10) || 4));
+            }
+
+            function applySettings() {
+                state.interval = Math.max(0, Math.min(10, parseInt(interval.value, 10) || 4));
+                state.cyclesTarget = getCyclesTarget();
+                state.auto = !!autoToggle.checked;
+                state.totalMs = toMsForPhase(state.phase);
+                store.set({
+                    theme: document.documentElement.dataset.theme,
+                    work: +workMin.value,
+                    short: +shortMin.value,
+                    long: +longMin.value,
+                    interval: +interval.value,
+                    cyclesTarget: cycles.value === "inf" ? "inf" : +cycles.value,
+                    goal: +goal.value,
+                    auto: state.auto,
+                    volume: masterGain.gain.value,
+                    muted: !!muteToggle.checked,
+                    vibe: !!vibeToggle.checked,
+                });
+            }
+
+            function toMs(min) {
+                return Math.max(1, Math.min(120, parseInt(min, 10) || 25)) * 60 * 1000;
+            }
+            function toMsForPhase(phase) {
+                if (phase === "work") return toMs(workMin.value);
+                if (phase === "short") return toMs(shortMin.value);
+                return toMs(longMin.value);
+            }
+
+            // ====== UI 更新 ======
+            function format(ms) {
+                const t = Math.max(0, Math.round(ms / 1000));
+                const m = String(Math.floor(t / 60)).padStart(2, "0");
+                const s = String(t % 60).padStart(2, "0");
+                return `${m}:${s}`;
+            }
+            function title(ms) {
+                document.title = `${format(ms)} • ${PHASES[state.phase]} – Tomaflux`;
+            }
+
+            function updateUI() {
+                const remaining = Math.max(0, state.endAt - Date.now());
+                timeEl.textContent = format(remaining || state.totalMs);
+                phaseLabel.textContent = PHASES[state.phase];
+                const deg = (1 - (remaining > 0 ? remaining / state.totalMs : 0)) * 360;
+                const clazz = state.phase === "work" ? "" : state.phase === "short" ? "short" : "long";
+                display.classList.toggle("short", state.phase === "short");
+                display.classList.toggle("long", state.phase === "long");
+                progressEl.style.background = getComputedStyle(display).getPropertyValue("--progress-bg") || progressEl.style.background;
+                progressEl.style.background = `conic-gradient(${
+                    state.phase === "work" ? "var(--accent-work)" : state.phase === "short" ? "var(--accent-short)" : "var(--accent-long)"
+                } ${deg}deg, #0000 0deg)`;
+                title(remaining || state.totalMs);
+                updateStats();
+                startPauseBtn.textContent = state.running ? "一時停止" : "開始";
+            }
+
+            function updateStats() {
+                const target = state.cyclesTarget === Infinity ? "∞" : state.cyclesTarget;
+                cycleStat.textContent = `${state.cyclesDone}/${target}`;
+                goalStat.textContent = `目標 ${Math.max(1, parseInt(goal.value, 10) || 8)}`;
+            }
+
+            function announce(msg) {
+                live.textContent = msg;
+            }
+
+            // ====== ライフサイクル ======
+            function start() {
+                if (audioCtx.state === "suspended") audioCtx.resume();
+                state.running = true;
+                const now = Date.now();
+                if (!state.startAt || state.endAt <= now) {
+                    state.startAt = now;
+                    state.totalMs = toMsForPhase(state.phase);
+                    state.endAt = now + state.totalMs;
+                } else {
+                    // 既に残りがある
+                }
+                worker.postMessage({ type: "start", intervalMs: 250 });
+                updateUI();
+                announce("開始");
+            }
+            function pause() {
+                state.running = false;
+                worker.postMessage({ type: "stop" });
+                updateUI();
+                announce("一時停止");
+            }
+
+            function reset() {
+                state.running = false;
+                worker.postMessage({ type: "stop" });
+                state.phase = "work";
+                state.cyclesDone = 0;
+                state.startAt = 0;
+                state.endAt = 0;
+                state.totalMs = toMsForPhase("work");
+                updateUI();
+                announce("リセット");
+            }
+
+            function nextPhase() {
+                // フェーズ終了時の遷移
+                if (state.phase === "work") {
+                    state.cyclesDone++;
+                    const takeLong = state.interval > 0 && state.cyclesDone % state.interval === 0;
+                    state.phase = takeLong ? "long" : "short";
+                } else {
+                    state.phase = "work";
+                }
+                state.startAt = Date.now();
+                state.totalMs = toMsForPhase(state.phase);
+                state.endAt = state.startAt + state.totalMs;
+                updateUI();
+            }
+
+            function maybeFinish() {
+                // サイクル目標到達（∞は終了しない）
+                if (state.phase === "work") {
+                    const target = state.cyclesTarget === Infinity ? Infinity : state.cyclesTarget;
+                    if (state.cyclesDone >= target && target !== Infinity) {
+                        state.running = false;
+                        worker.postMessage({ type: "stop" });
+                        notify("おつかれさま！", `今日の目標 ${target} サイクルを達成しました`);
+                        beep("done");
+                        vibrate();
+                        announce("目標を達成しました");
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // Worker tick
+            worker.onmessage = (e) => {
+                if (!state.running) return;
+                const now = e.data.t || Date.now();
+                const remaining = state.endAt - now;
+                if (remaining <= 0) {
+                    // フェーズ終了
+                    notify(`${PHASES[state.phase]} 終了`, "次へ進みましょう");
+                    beep("phase");
+                    vibrate();
+                    if (state.phase === "work") {
+                        if (maybeFinish()) {
+                            updateUI();
+                            return;
+                        }
+                    }
+                    nextPhase();
+                    if (!state.auto) {
+                        pause();
+                    }
+                } else {
+                    // 通常進行
+                    timeEl.textContent = format(remaining);
+                    const deg = (1 - remaining / state.totalMs) * 360;
+                    progressEl.style.background = `conic-gradient(${
+                        state.phase === "work"
+                            ? "var(--accent-work)"
+                            : state.phase === "short"
+                            ? "var(--accent-short)"
+                            : "var(--accent-long)"
+                    } ${deg}deg, #0000 0deg)`;
+                    title(remaining);
+                }
+            };
+
+            // ====== イベント ======
+            startPauseBtn.addEventListener("click", () => (state.running ? pause() : start()));
+            skipBtn.addEventListener("click", () => {
+                if (state.running) {
+                    notify("スキップ", "次のフェーズへ");
+                }
+                nextPhase();
+                if (!state.auto) pause();
+            });
+            resetBtn.addEventListener("click", reset);
+            themeBtn.addEventListener("click", () => {
+                const d = document.documentElement;
+                d.dataset.theme = d.dataset.theme === "dark" ? "light" : "dark";
+                store.set({ theme: d.dataset.theme });
+            });
+            notifyBtn.addEventListener("click", requestNotify);
+
+            [workMin, shortMin, longMin, interval, cycles, goal, autoToggle].forEach((el) => {
+                el.addEventListener("change", () => {
+                    applySettings();
+                    updateUI();
+                });
+                el.addEventListener("input", () => {
+                    if (el.type === "number" || el.tagName === "SELECT") {
+                        applySettings();
+                        updateUI();
+                    }
+                });
+            });
+            muteToggle.addEventListener("change", () => store.set({ muted: !!muteToggle.checked }));
+            vibeToggle.addEventListener("change", () => store.set({ vibe: !!vibeToggle.checked }));
+
+            // キーボード
+            window.addEventListener("keydown", (e) => {
+                if (e.key === " ") {
+                    e.preventDefault();
+                    state.running ? pause() : start();
+                } else if (e.key.toLowerCase() === "n") {
+                    e.preventDefault();
+                    skipBtn.click();
+                } else if (e.key.toLowerCase() === "r") {
+                    e.preventDefault();
+                    resetBtn.click();
+                } else if (e.key.toLowerCase() === "t") {
+                    e.preventDefault();
+                    themeBtn.click();
+                }
+            });
+
+            // タブ復帰時に遅延補正
+            document.addEventListener("visibilitychange", () => {
+                if (!document.hidden) updateUI();
+            });
+        </script>
+    </body>
+</html>
